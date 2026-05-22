@@ -1,0 +1,58 @@
+[gd_scene format=3 uid="uid://dtj5m808erwrt"]
+
+[ext_resource type="Script" path="res://scripts/world/GameWorld.cs" id="1_jbt0g"]
+[ext_resource type="PackedScene" path="res://scenes/world/PlayerPawn.tscn" id="2_xxqx8"]
+[ext_resource type="Script" path="res://scripts/world/ChunkedTerrain.cs" id="3_0o8yu"]
+
+[sub_resource type="Environment" id="Environment_0gj7w"]
+background_mode = 2
+sky = null
+ambient_light_source = 3
+ambient_light_color = Color(0.47, 0.54, 0.62, 1)
+ambient_light_energy = 1.15
+
+[node name="GameWorld" type="Node3D"]
+script = ExtResource("1_jbt0g")
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_0gj7w")
+
+[node name="Sun" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.9035987, -0.4065951, 0.13473809, 0, 0.31411746, 0.94938385, -0.42837995, -0.85786974, 0.28384355, 0, 0, 0)
+light_energy = 1.4
+shadow_enabled = true
+
+[node name="ChunkedTerrain" type="Node3D" parent="."]
+script = ExtResource("3_0o8yu")
+ChunkCountX = 4
+ChunkCountZ = 4
+ChunkResolution = 20
+ChunkSize = 36.0
+HeightScale = 7.0
+NoiseFrequency = 0.03
+Seed = 1024
+
+[node name="PlayerPawn" parent="." instance=ExtResource("2_xxqx8")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 24, 8, 24)
+
+[node name="UI" type="CanvasLayer" parent="."]
+
+[node name="DebugPanel" type="PanelContainer" parent="UI"]
+offset_left = 12.0
+offset_top = 12.0
+offset_right = 360.0
+offset_bottom = 150.0
+
+[node name="DebugLabel" type="Label" parent="UI/DebugPanel"]
+autowrap_mode = 3
+text = "Debug info"
+
+[node name="LogoutButton" type="Button" parent="UI"]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -190.0
+offset_top = 12.0
+offset_right = -16.0
+offset_bottom = 56.0
+text = "Logout"

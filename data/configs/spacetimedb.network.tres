@@ -1,0 +1,21 @@
+[gd_resource type="Resource" script_class="SpaceTimeDbNetworkConfig" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/networking/spacetimedb/SpaceTimeDbNetworkConfig.cs" id="1_gwte8"]
+
+[resource]
+script = ExtResource("1_gwte8")
+ServerUrl = "http://localhost:3000"
+DatabaseName = "aetheria"
+PingEndpointTemplate = "v1/health"
+LoginEndpointTemplate = "v1/identity"
+ReducerCallEndpointTemplate = "v1/database/{db}/call/{reducer}"
+LoginAuditReducerName = ""
+RefreshEndpointTemplate = ""
+LogoutEndpointTemplate = ""
+RequestTimeoutSeconds = 10
+RetryCount = 2
+RetryBackoffSeconds = 0.5
+EnableLocalDevAuth = false
+AllowLocalDevFallbackOnPingFailure = false
+DevUsername = "dev"
+DevPassword = "devpass123"

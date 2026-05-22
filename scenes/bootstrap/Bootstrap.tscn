@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://b7s8p1nq4x2kf"]
+
+[ext_resource type="Script" path="res://scripts/core/Bootstrap.cs" id="1_u0k1f"]
+[ext_resource type="PackedScene" path="res://scenes/ui/LoginScreen.tscn" id="2_0rj1t"]
+
+[node name="Bootstrap" type="Node"]
+script = ExtResource("1_u0k1f")
+LoginScene = ExtResource("2_0rj1t")
