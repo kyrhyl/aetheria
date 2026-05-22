@@ -13,6 +13,7 @@ public partial class SpaceTimeDbAuthService : Node, ISpaceTimeDbAuthService
 
 	public bool IsServerConnected { get; private set; }
 	public bool IsUsingLocalDevAuth { get; private set; }
+	public string CurrentUsername { get; private set; } = string.Empty;
 	public SpaceTimeDbSession CurrentSession { get; private set; }
 
 	private ISpaceTimeDbTransport _transport = null!;
@@ -110,6 +111,7 @@ public partial class SpaceTimeDbAuthService : Node, ISpaceTimeDbAuthService
 			if (!string.IsNullOrWhiteSpace(cachedIdentity))
 			{
 				CurrentSession = new SpaceTimeDbSession(cachedIdentity, new SpaceTimeDbAuthTokens(cachedToken, cachedToken));
+				CurrentUsername = string.IsNullOrWhiteSpace(username) ? "(cached)" : username.Trim();
 				await BindUsernameAsync(username, cancellationToken);
 				await BindRuntimeProfileAsync(cancellationToken);
 				GD.Print($"[SpaceTimeDB] Reused cached token for {cachedIdentity}");
@@ -124,6 +126,7 @@ public partial class SpaceTimeDbAuthService : Node, ISpaceTimeDbAuthService
 
 		SpaceTimeDbHandshakeResult handshake = await _transport.LoginAsync(username, password, cancellationToken);
 		CurrentSession = new SpaceTimeDbSession(handshake.Identity, handshake.Tokens);
+		CurrentUsername = username.Trim();
 		await BindUsernameAsync(username, cancellationToken);
 		await BindRuntimeProfileAsync(cancellationToken);
 		SaveCachedToken(CurrentSession.Tokens.AccessToken);
@@ -163,9 +166,9 @@ public partial class SpaceTimeDbAuthService : Node, ISpaceTimeDbAuthService
 		return new PlayerPositionResult(true, pos);
 	}
 
-	public async Task<Dictionary<string, Vector3>> GetAllPlayerPositionsAsync(CancellationToken cancellationToken = default)
+	public async Task<IReadOnlyList<RemotePlayerSnapshot>> GetRemotePlayersAsync(CancellationToken cancellationToken = default)
 	{
-		Dictionary<string, Vector3> players = new Dictionary<string, Vector3>(StringComparer.OrdinalIgnoreCase);
+		List<RemotePlayerSnapshot> players = new List<RemotePlayerSnapshot>();
 
 		if (string.IsNullOrWhiteSpace(CurrentSession.Tokens.AccessToken))
 		{
@@ -176,8 +179,9 @@ public partial class SpaceTimeDbAuthService : Node, ISpaceTimeDbAuthService
 
 		string currentProfile = RuntimeLaunchOptions.Current.Profile?.Trim() ?? string.Empty;
 		string escapedProfile = currentProfile.Replace("'", "''");
-		string sql = $"select identity, x, y, z from player_presence where profile <> '' and profile <> '{escapedProfile}';";
+		string sql = $"select profile, identity, x, y, z from player_presence where profile <> '' and profile <> '{escapedProfile}';";
 		string content = await _transport.ExecuteSqlAsync(CurrentSession.Tokens.AccessToken, sql, cancellationToken);
+		Dictionary<string, string> usernameByIdentity = await LoadUsernamesByIdentityAsync(cancellationToken);
 		using JsonDocument doc = JsonDocument.Parse(content);
 		JsonElement root = doc.RootElement;
 		if (root.GetArrayLength() == 0)
@@ -189,7 +193,68 @@ public partial class SpaceTimeDbAuthService : Node, ISpaceTimeDbAuthService
 		for (int i = 0; i < rows.GetArrayLength(); i++)
 		{
 			JsonElement row = rows[i];
-			if (row.GetArrayLength() < 4)
+			if (row.GetArrayLength() < 5)
+			{
+				continue;
+			}
+
+			string profile = ReadTextCell(row[0]);
+			if (string.IsNullOrWhiteSpace(profile))
+			{
+				continue;
+			}
+
+			string identity = ReadIdentityCell(row[1]);
+			if (identity.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+			{
+				identity = identity[2..];
+			}
+
+			if (string.IsNullOrWhiteSpace(identity))
+			{
+				continue;
+			}
+
+			Vector3 pos = new Vector3(
+				row[2].GetSingle(),
+				row[3].GetSingle(),
+				row[4].GetSingle()
+			);
+
+			string displayName = profile;
+			if (usernameByIdentity.TryGetValue(identity, out string username) && !string.IsNullOrWhiteSpace(username))
+			{
+				displayName = username;
+			}
+
+			players.Add(new RemotePlayerSnapshot
+			{
+				Identity = identity,
+				Profile = profile,
+				DisplayName = displayName,
+				Position = pos
+			});
+		}
+
+		return players;
+	}
+
+	private async Task<Dictionary<string, string>> LoadUsernamesByIdentityAsync(CancellationToken cancellationToken)
+	{
+		Dictionary<string, string> usernames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+		string content = await _transport.ExecuteSqlAsync(CurrentSession.Tokens.AccessToken, "select identity, username from player_profile;", cancellationToken);
+		using JsonDocument doc = JsonDocument.Parse(content);
+		JsonElement root = doc.RootElement;
+		if (root.GetArrayLength() == 0)
+		{
+			return usernames;
+		}
+
+		JsonElement rows = root[0].GetProperty("rows");
+		for (int i = 0; i < rows.GetArrayLength(); i++)
+		{
+			JsonElement row = rows[i];
+			if (row.GetArrayLength() < 2)
 			{
 				continue;
 			}
@@ -205,16 +270,14 @@ public partial class SpaceTimeDbAuthService : Node, ISpaceTimeDbAuthService
 				continue;
 			}
 
-			Vector3 pos = new Vector3(
-				row[1].GetSingle(),
-				row[2].GetSingle(),
-				row[3].GetSingle()
-			);
-
-			players[identity] = pos;
+			string username = ReadTextCell(row[1]);
+			if (!string.IsNullOrWhiteSpace(username))
+			{
+				usernames[identity] = username;
+			}
 		}
 
-		return players;
+		return usernames;
 	}
 
 	private static string ReadIdentityCell(JsonElement identityCell)
@@ -238,6 +301,21 @@ public partial class SpaceTimeDbAuthService : Node, ISpaceTimeDbAuthService
 		}
 
 		return identityCell.ToString().Trim();
+	}
+
+	private static string ReadTextCell(JsonElement textCell)
+	{
+		string value = textCell.ValueKind == JsonValueKind.String
+			? textCell.GetString() ?? string.Empty
+			: textCell.ToString();
+
+		value = value.Trim();
+		if (value.Length >= 2 && value[0] == '"' && value[^1] == '"')
+		{
+			value = value[1..^1];
+		}
+
+		return value.Trim();
 	}
 
 	public async Task SavePlayerPositionAsync(Vector3 position, CancellationToken cancellationToken = default)
@@ -325,6 +403,7 @@ public partial class SpaceTimeDbAuthService : Node, ISpaceTimeDbAuthService
 			await _transport.LogoutAsync(CurrentSession.Tokens.AccessToken, cancellationToken);
 		}
 		CurrentSession = new SpaceTimeDbSession(string.Empty, new SpaceTimeDbAuthTokens(string.Empty, string.Empty));
+		CurrentUsername = string.Empty;
 		if (IsUsingLocalDevAuth)
 		{
 			IsServerConnected = false;

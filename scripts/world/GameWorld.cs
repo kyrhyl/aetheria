@@ -184,7 +184,7 @@ public partial class GameWorld : Node3D
 		_isRefreshingRemotePlayers = true;
 		try
 		{
-			Dictionary<string, Vector3> positions = await _authService.GetAllPlayerPositionsAsync();
+			IReadOnlyList<RemotePlayerSnapshot> players = await _authService.GetRemotePlayersAsync();
 			Vector3 localPos = _localPlayer.GlobalPosition;
 
 			double now = Time.GetUnixTimeFromSystem();
@@ -192,26 +192,29 @@ public partial class GameWorld : Node3D
 			Vector3 chosenPosition = Vector3.Zero;
 			float chosenDistance = float.MaxValue;
 
-			foreach (KeyValuePair<string, Vector3> entry in positions)
+			string chosenName = string.Empty;
+			foreach (RemotePlayerSnapshot player in players)
 			{
-				string remoteIdentity = NormalizeIdentity(entry.Key);
+				string remoteIdentity = NormalizeIdentity(player.Identity);
 				if (string.IsNullOrWhiteSpace(remoteIdentity))
 				{
 					continue;
 				}
 
-				float dist = entry.Value.DistanceTo(localPos);
+				float dist = player.Position.DistanceTo(localPos);
 				if (dist < chosenDistance)
 				{
 					chosenDistance = dist;
 					chosenIdentity = remoteIdentity;
-					chosenPosition = entry.Value;
+					chosenPosition = player.Position;
+					chosenName = player.DisplayName;
 				}
 			}
 
 			if (!string.IsNullOrWhiteSpace(chosenIdentity))
 			{
 				Node3D remote = GetOrCreateRemotePlayer(chosenIdentity);
+				SetRemotePlayerLabel(chosenName);
 				if (_hasRemotePlayer)
 				{
 					double dt = Math.Max(0.001, now - _remoteTrack.LastSampleTime);
@@ -228,7 +231,7 @@ public partial class GameWorld : Node3D
 				_remoteTrack.LastSampleTime = now;
 				_remoteTrack.TargetPosition = chosenPosition;
 				_lastRemoteSeenTime = now;
-				_lastRemoteIdentityLabel = FormatIdentityLabel(chosenIdentity);
+				_lastRemoteIdentityLabel = string.IsNullOrWhiteSpace(chosenName) ? FormatIdentityLabel(chosenIdentity) : chosenName;
 			}
 			else
 			{
@@ -343,6 +346,7 @@ public partial class GameWorld : Node3D
 
 		Label3D tag = new Label3D
 		{
+			Name = "NameTag",
 			Billboard = BaseMaterial3D.BillboardModeEnum.Enabled,
 			Text = FormatIdentityLabel(identity),
 			Position = new Vector3(0, 1.2f, 0),
@@ -351,10 +355,49 @@ public partial class GameWorld : Node3D
 		};
 
 		root.AddChild(body);
+
+		StaticBody3D colliderBody = new StaticBody3D();
+		CollisionShape3D collisionShape = new CollisionShape3D
+		{
+			Shape = new CapsuleShape3D
+			{
+				Radius = 0.4f,
+				Height = 1.4f
+			}
+		};
+		colliderBody.AddChild(collisionShape);
+		root.AddChild(colliderBody);
+
 		root.AddChild(tag);
 		AddChild(root);
 		_remotePlayer = root;
 		return root;
+	}
+
+	private void SetRemotePlayerLabel(string displayName)
+	{
+		if (_remotePlayer == null || !IsInstanceValid(_remotePlayer) || string.IsNullOrWhiteSpace(displayName))
+		{
+			return;
+		}
+
+		Label3D label = _remotePlayer.GetNodeOrNull<Label3D>("NameTag");
+		if (label == null)
+		{
+			foreach (Node child in _remotePlayer.GetChildren())
+			{
+				if (child is Label3D fallback)
+				{
+					label = fallback;
+					break;
+				}
+			}
+		}
+
+		if (label != null)
+		{
+			label.Text = displayName;
+		}
 	}
 
 	private static string FormatIdentityLabel(string identity)
@@ -421,11 +464,13 @@ public partial class GameWorld : Node3D
 
 		Vector3 p = _localPlayer.GlobalPosition;
 		string mode = _authService.IsUsingLocalDevAuth ? "LOCAL_DEV" : "SERVER";
+		string username = string.IsNullOrWhiteSpace(_authService.CurrentUsername) ? "unknown" : _authService.CurrentUsername;
 		string identity = string.IsNullOrWhiteSpace(_authService.CurrentSession.Identity) ? "none" : _authService.CurrentSession.Identity[..Math.Min(12, _authService.CurrentSession.Identity.Length)] + "...";
 		float dist = p.DistanceTo(_lastSavedPosition);
 
 		_debugLabel.Text =
 			$"Mode: {mode}\n" +
+			$"Username: {username}\n" +
 			$"Identity: {identity}\n" +
 			$"Visible players: {(_hasRemotePlayer ? 2 : 1)}\n" +
 			$"Remote sample: {_lastRemoteIdentityLabel}\n" +
