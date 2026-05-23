@@ -1,6 +1,8 @@
 [gd_scene format=3 uid="uid://buy4v221gc0n7"]
 
 [ext_resource type="Script" path="res://scripts/world/PlayerPawn.cs" id="1_2koda"]
+[ext_resource type="Script" path="res://scripts/world/CharacterVisualManager.cs" id="2_cvmgr"]
+[ext_resource type="PackedScene" path="res://addons/gdquest_gdbot/gdbot.glb" id="3_1nyqq"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_player"]
 radius = 0.4
@@ -16,7 +18,11 @@ script = ExtResource("1_2koda")
 [node name="CollisionShape3D" type="CollisionShape3D" parent="."]
 shape = SubResource("CapsuleShape3D_player")
 
-[node name="BodyMesh" type="MeshInstance3D" parent="."]
+[node name="MeshRoot" type="Node3D" parent="."]
+script = ExtResource("2_cvmgr")
+DefaultCharacterScene = ExtResource("3_1nyqq")
+
+[node name="BodyMesh" type="MeshInstance3D" parent="MeshRoot"]
 mesh = SubResource("CapsuleMesh_player")
 
 [node name="CameraPivot" type="Node3D" parent="."]
